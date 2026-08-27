@@ -131,12 +131,35 @@ async function opisHasilatSorgula(sunucu, sorguTarihi) {
             
             $ = cheerio.load(combinedHtml || res.data);
 
+            // 🚀 TÜM TABLOYU SATIR SATIR OKUYAN YENİ MOTOR
             $('tbody.ui-datatable-data tr').each((i, row) => {
                 let cols = $(row).find('td');
                 if (cols.length >= 11) { 
                     let kasiyerAdi = $(cols[1]).text().trim().toUpperCase();
+                    let toplamSatis = parseFloat($(cols[2]).text().trim()) || 0;
+                    let toplamBonus = parseFloat($(cols[3]).text().trim()) || 0;
+                    let toplamKredi = parseFloat($(cols[4]).text().trim()) || 0;
+                    let toplamOzelSatis = parseFloat($(cols[5]).text().trim()) || 0;
+                    let toplamPromosyon = parseFloat($(cols[6]).text().trim()) || 0;
+                    let toplamMisafir = parseFloat($(cols[7]).text().trim()) || 0;
+                    let toplamDepozitAlim = parseFloat($(cols[8]).text().trim()) || 0;
+                    let toplamDepozitIade = parseFloat($(cols[9]).text().trim()) || 0;
                     let toplamCiro = parseFloat($(cols[10]).text().trim()) || 0;
-                    if (kasiyerAdi && kasiyerAdi !== "" && toplamCiro > 0) kasaCiroListesi.push({ isim: kasiyerAdi, ciro: toplamCiro });
+
+                    if (kasiyerAdi && kasiyerAdi !== "" && (toplamCiro > 0 || toplamSatis > 0)) {
+                        kasaCiroListesi.push({
+                            isim: kasiyerAdi,
+                            satis: toplamSatis,
+                            bonus: toplamBonus,
+                            kredi: toplamKredi,
+                            ozelSatis: toplamOzelSatis,
+                            promosyon: toplamPromosyon,
+                            misafir: toplamMisafir,
+                            depozitAlim: toplamDepozitAlim,
+                            depozitIade: toplamDepozitIade,
+                            ciro: toplamCiro
+                        });
+                    }
                 }
             });
         }
@@ -147,7 +170,7 @@ async function opisHasilatSorgula(sunucu, sorguTarihi) {
     }
 }
 
-// YEPYENİ ROTAMIZ: SADECE GÜN SONU İÇİN (DEVİRLERİ AYRI GÖNDERİR)
+// YEPYENİ ROTAMIZ: SADECE GÜN SONU İÇİN 
 app.get('/api/gunsonu-sorgula', async (req, res) => {
     try {
         let { asilTarih, devirTarihi, isDevirVakti } = getTarihler();
@@ -170,20 +193,47 @@ app.get('/api/gunsonu-sorgula', async (req, res) => {
         let genelToplamCiro = 0;
         let devirToplamCiro = 0;
 
+        // ASIL SATIŞLARI BİRLEŞTİR VE TOPLA
         for (let kasa of tumKasaVerileri) {
-            if (!birlesikKasalar[kasa.isim]) birlesikKasalar[kasa.isim] = { ciro: 0, devir: 0 };
+            if (!birlesikKasalar[kasa.isim]) {
+                birlesikKasalar[kasa.isim] = { 
+                    ciro: 0, devir: 0, satis: 0, bonus: 0, kredi: 0, 
+                    ozelSatis: 0, promosyon: 0, misafir: 0, depozitAlim: 0, depozitIade: 0 
+                };
+            }
             birlesikKasalar[kasa.isim].ciro += kasa.ciro;
+            birlesikKasalar[kasa.isim].satis += kasa.satis;
+            birlesikKasalar[kasa.isim].bonus += kasa.bonus;
+            birlesikKasalar[kasa.isim].kredi += kasa.kredi;
+            birlesikKasalar[kasa.isim].ozelSatis += kasa.ozelSatis;
+            birlesikKasalar[kasa.isim].promosyon += kasa.promosyon;
+            birlesikKasalar[kasa.isim].misafir += kasa.misafir;
+            birlesikKasalar[kasa.isim].depozitAlim += kasa.depozitAlim;
+            birlesikKasalar[kasa.isim].depozitIade += kasa.depozitIade;
+            
             genelToplamCiro += kasa.ciro;
         }
         
+        // DEVİRLERİ (SADECE CİRO BAZINDA) BİRLEŞTİR
         for (let devKasa of devirKasaVerileri) {
-            if (!birlesikKasalar[devKasa.isim]) birlesikKasalar[devKasa.isim] = { ciro: 0, devir: 0 };
+            if (!birlesikKasalar[devKasa.isim]) {
+                birlesikKasalar[devKasa.isim] = { 
+                    ciro: 0, devir: 0, satis: 0, bonus: 0, kredi: 0, 
+                    ozelSatis: 0, promosyon: 0, misafir: 0, depozitAlim: 0, depozitIade: 0 
+                };
+            }
             birlesikKasalar[devKasa.isim].devir += devKasa.ciro;
             devirToplamCiro += devKasa.ciro;
         }
 
         let kasaListesi = Object.keys(birlesikKasalar).map(isim => {
-            return { isim: isim, ciro: birlesikKasalar[isim].ciro, devir: birlesikKasalar[isim].devir };
+            let k = birlesikKasalar[isim];
+            return { 
+                isim: isim, ciro: k.ciro, devir: k.devir, satis: k.satis, 
+                bonus: k.bonus, kredi: k.kredi, ozelSatis: k.ozelSatis, 
+                promosyon: k.promosyon, misafir: k.misafir, 
+                depozitAlim: k.depozitAlim, depozitIade: k.depozitIade 
+            };
         });
         
         kasaListesi.sort((a, b) => (b.ciro + b.devir) - (a.ciro + a.devir));
@@ -194,7 +244,19 @@ app.get('/api/gunsonu-sorgula', async (req, res) => {
             genelToplam: genelToplamCiro.toFixed(2),
             devirToplam: devirToplamCiro.toFixed(2),
             isDevirVakti: isDevirVakti,
-            kasalar: kasaListesi.map(k => ({ isim: k.isim, ciro: k.ciro.toFixed(2), devir: k.devir.toFixed(2) }))
+            kasalar: kasaListesi.map(k => ({ 
+                isim: k.isim, 
+                ciro: k.ciro.toFixed(2),
+                devir: k.devir.toFixed(2),
+                satis: k.satis.toFixed(2),
+                bonus: k.bonus.toFixed(2),
+                kredi: k.kredi.toFixed(2),
+                ozelSatis: k.ozelSatis.toFixed(2),
+                promosyon: k.promosyon.toFixed(2),
+                misafir: k.misafir.toFixed(2),
+                depozitAlim: k.depozitAlim.toFixed(2),
+                depozitIade: k.depozitIade.toFixed(2)
+            }))
         });
 
     } catch (error) {
@@ -202,6 +264,5 @@ app.get('/api/gunsonu-sorgula', async (req, res) => {
     }
 });
 
-// 🎯 DİKKAT: ESKİSİ GİBİ 10001 DEĞİL, YEPYENİ 10002 PORTUNDA ÇALIŞACAK!
 const port = process.env.PORT || 10002;
 app.listen(port, () => console.log(`[API AKTİF] Yeni Gün Sonu Motoru Port ${port} Üzerinde Dinleniyor...`));
